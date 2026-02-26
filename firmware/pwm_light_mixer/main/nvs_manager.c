@@ -1,4 +1,5 @@
 #include "nvs_manager.h"
+#include "config.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -6,22 +7,29 @@
 #include <string.h>
 
 static const char *TAG = "NVS_MANAGER";
-static const char *NVS_NAMESPACE = "led_ctrl";
-static const char *NVS_KEY_PWM_ENABLED = "pwm_en";
-static const char *NVS_KEY_PWM_VALUE = "pwm_val";
-static const uint32_t FLASH_WRITE_DEBOUNCE_MS = 5000;  // 5 second debounce
+
+/**
+ * ============================================================================
+ * NVS CONFIGURATION - Uses centralized config.h
+ * ============================================================================
+ */
+
+static const char *NVS_NAMESPACE = CONFIG_NVS_NAMESPACE;
+static const char *NVS_KEY_PWM_ENABLED = CONFIG_NVS_KEY_PWM_ENABLED;
+static const char *NVS_KEY_PWM_VALUE = CONFIG_NVS_KEY_PWM_VALUE;
+static const uint32_t FLASH_WRITE_DEBOUNCE_MS = CONFIG_FLASH_WRITE_DEBOUNCE;
 
 // Cache for last saved state to optimize write cycles
 static nvs_led_state_t last_saved_state = {
-    .pwm_enabled = true,
-    .pwm_value = 155
+    .pwm_enabled = CONFIG_NVS_DEFAULT_PWM_ENABLE,
+    .pwm_value = CONFIG_NVS_DEFAULT_PWM_VALUE
 };
 static bool state_cached = false;
 
 // Pending write tracking
 static nvs_led_state_t pending_state = {
-    .pwm_enabled = true,
-    .pwm_value = 155
+    .pwm_enabled = CONFIG_NVS_DEFAULT_PWM_ENABLE,
+    .pwm_value = CONFIG_NVS_DEFAULT_PWM_VALUE
 };
 static uint32_t pending_timestamp = 0;
 static bool pending_write = false;
@@ -75,13 +83,13 @@ int nvs_manager_load_led_state(nvs_led_state_t *state)
     
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "No NVS data found, using defaults");
-        state->pwm_enabled = true;
-        state->pwm_value = 155;
+        state->pwm_enabled = CONFIG_NVS_DEFAULT_PWM_ENABLE;
+        state->pwm_value = CONFIG_NVS_DEFAULT_PWM_VALUE;
         return 0;  // Return success with defaults
     }
     
     // Read PWM enabled state
-    uint8_t pwm_enabled = 1;
+    uint8_t pwm_enabled = (uint8_t)CONFIG_NVS_DEFAULT_PWM_ENABLE;
     ret = nvs_get_u8(nvs_handle, NVS_KEY_PWM_ENABLED, &pwm_enabled);
     if (ret != ESP_OK && ret != ESP_ERR_NVS_NOT_FOUND) {
         ESP_LOGE(TAG, "Failed to read pwm_enabled from NVS: 0x%x", ret);
@@ -91,7 +99,7 @@ int nvs_manager_load_led_state(nvs_led_state_t *state)
     state->pwm_enabled = (bool)pwm_enabled;
     
     // Read PWM value
-    uint32_t pwm_value = 155;
+    uint32_t pwm_value = CONFIG_NVS_DEFAULT_PWM_VALUE;
     ret = nvs_get_u32(nvs_handle, NVS_KEY_PWM_VALUE, &pwm_value);
     if (ret != ESP_OK && ret != ESP_ERR_NVS_NOT_FOUND) {
         ESP_LOGE(TAG, "Failed to read pwm_value from NVS: 0x%x", ret);
@@ -229,8 +237,8 @@ int nvs_manager_get_last_state(nvs_led_state_t *state)
     
     if (!state_cached) {
         ESP_LOGW(TAG, "State not cached, returning defaults");
-        state->pwm_enabled = true;
-        state->pwm_value = 155;
+        state->pwm_enabled = CONFIG_NVS_DEFAULT_PWM_ENABLE;
+        state->pwm_value = CONFIG_NVS_DEFAULT_PWM_VALUE;
         return 0;
     }
     

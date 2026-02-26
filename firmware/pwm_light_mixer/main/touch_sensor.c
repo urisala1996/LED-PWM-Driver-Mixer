@@ -1,10 +1,18 @@
 #include "touch_sensor.h"
+#include "config.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "driver/gpio.h"
 #include "esp_log.h"
 
 static const char *TAG = "TOUCH_SENSOR";
+
+/**
+ * ============================================================================
+ * TOUCH SENSOR STATE
+ * ============================================================================
+ */
 
 // Static variables for touch sensor state
 static volatile bool sensor_touched = false;
@@ -15,22 +23,28 @@ static volatile bool last_sensor_state = false;
 static SemaphoreHandle_t touch_mutex = NULL;
 
 /**
- * Read current sensor state
+ * @brief Read current sensor state
+ * @return true if sensor is high (touched), false otherwise
  */
 static bool touch_sensor_read(void)
 {
-    return gpio_get_level(TOUCH_SENSOR_PIN) == 1;
+    return gpio_get_level(CONFIG_TOUCH_SENSOR_PIN) == 1;
 }
 
 /**
- * RTOS task for touch sensor reading with debouncing
+ * @brief RTOS task for touch sensor reading with debouncing
+ * 
+ * Monitors sensor pin with debouncing logic to filter noise and
+ * properly detect touch edges.
+ * 
+ * @param pvParameters Task parameters (unused)
  */
 static void touch_sensor_task(void *pvParameters)
 {
     ESP_LOGI(TAG, "Touch sensor task started");
     
     uint32_t debounce_counter = 0;
-    const uint32_t debounce_threshold = 5;  // ~50ms debounce at 10ms polling
+    const uint32_t debounce_threshold = CONFIG_TOUCH_DEBOUNCE_COUNT;
     
     while (1) {
         bool current_state = touch_sensor_read();
@@ -64,16 +78,18 @@ static void touch_sensor_task(void *pvParameters)
             }
         }
         
-        vTaskDelay(10 / portTICK_PERIOD_MS);
+        vTaskDelay(CONFIG_TOUCH_POLL_INTERVAL / portTICK_PERIOD_MS);
     }
 }
 
 /**
- * Initialize the touch sensor
+ * @brief Initialize the touch sensor
+ * 
+ * Configures GPIO pin and creates background task for debounced edge detection.
  */
 void touch_sensor_init(void)
 {
-    ESP_LOGI(TAG, "Initializing touch sensor on GPIO %d", TOUCH_SENSOR_PIN);
+    ESP_LOGI(TAG, "Initializing touch sensor on GPIO %d", CONFIG_TOUCH_SENSOR_PIN);
     
     // Create mutex for thread-safe access
     touch_mutex = xSemaphoreCreateMutex();
@@ -86,7 +102,7 @@ void touch_sensor_init(void)
     gpio_config_t sensor_conf = {
         .intr_type = GPIO_INTR_DISABLE,
         .mode = GPIO_MODE_INPUT,
-        .pin_bit_mask = (1ULL << TOUCH_SENSOR_PIN),
+        .pin_bit_mask = (1ULL << CONFIG_TOUCH_SENSOR_PIN),
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .pull_up_en = GPIO_PULLUP_DISABLE,
     };
@@ -95,16 +111,16 @@ void touch_sensor_init(void)
     // Initialize last sensor state
     last_sensor_state = touch_sensor_read();
     
-    ESP_LOGI(TAG, "Touch sensor initialized on GPIO %d", TOUCH_SENSOR_PIN);
+    ESP_LOGI(TAG, "Touch sensor initialized on GPIO %d", CONFIG_TOUCH_SENSOR_PIN);
     
     // Create and start the touch sensor task
     xTaskCreate(
-        touch_sensor_task,      // Task function
-        "touch_sensor_task",    // Task name
-        2048,                   // Stack size
-        NULL,                   // Task parameters
-        5,                      // Priority
-        NULL                    // Task handle
+        touch_sensor_task,           // Task function
+        "touch_sensor_task",         // Task name
+        CONFIG_TOUCH_TASK_STACK,     // Stack size
+        NULL,                        // Task parameters
+        CONFIG_TOUCH_TASK_PRIORITY,  // Priority
+        NULL                         // Task handle
     );
     
     ESP_LOGI(TAG, "Touch sensor RTOS task created");
